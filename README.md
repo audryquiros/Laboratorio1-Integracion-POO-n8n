@@ -1,44 +1,30 @@
-# Laboratorio 1 — Facturación con días hábiles (POO + n8n)
+# Laboratorio 1 — Integración POO + n8n (extensión de cuatro retos)
 
-## Incluye
-- `n8n/workflow_facturacion.json`: workflow importable.
-- `src/facturacion.js`: clases `Factura` y `CalendarioLaboral`.
-- `src/main.js`: pruebas independientes y error controlado.
-- `data/db.json`: datos de ejemplo.
-- `docs/logica_negocio.md`: documento de lógica de negocio.
-- `docs/diagrama_workflow.mmd` y `docs/diagrama_workflow.svg`: diagrama.
+Este proyecto parte del ZIP original del laboratorio de facturación con días hábiles y feriados.
 
-## Requisitos
-Node.js LTS, npm y n8n. Si n8n corre en Docker, cambia `localhost` por `host.docker.internal` en las URL de JSON Server (Windows/Mac).
+## Contenido
+- `src/facturacion.js`: CalendarioLaboral, Factura, FacturaCredito, FacturaContado e HistorialTendencia.
+- `src/main.js`: demostración de las clases y manejo de error.
+- `public/index.html` y `public/clases.js`: página web de prueba.
+- `db.json`: datos de facturas e historial para JSON Server.
+- `n8n/workflow_facturacion_extension.json`: workflow ampliado.
+- `Docs/`: documento y diagrama de la extensión, además del documento/imagen del laboratorio base.
 
-## Ejecutar
-1. Abre esta carpeta en VS Code.
-2. Terminal: `npm install`
-3. Terminal: `npm run server` (deja la terminal abierta).
-4. En otra terminal: `npm test`.
-5. Abre n8n → Import from File → selecciona `n8n/workflow_facturacion.json`.
-6. Pulsa **Execute Workflow**. Revisa los nodos de resultado y `http://localhost:3000/invoices`.
+## Ejecutar en VS Code
+1. Descomprime y abre la carpeta en VS Code.
+2. Ejecuta `npm install`.
+3. Ejecuta `npm test`.
+4. En otra terminal ejecuta `npm run server` y déjala abierta.
+5. Comprueba `http://127.0.0.1:3000/invoices` y `http://127.0.0.1:3000/historial`.
+6. Abre `public/index.html` en el navegador.
 
-## Reglas
-1. Lunes a viernes son días hábiles.
-2. Se excluyen feriados de Nager.Date Costa Rica.
-3. Plazo por defecto de 15 días hábiles.
-4. Facturas pagadas/anuladas conservan su estado.
-5. Solo se marca vencida si hoy es posterior al vencimiento.
-6. Datos incompletos se derivan a revisión manual.
-7. Se limita el cálculo para evitar bucles indefinidos.
+## Cuatro retos
+1. Herencia y polimorfismo: FacturaCredito y FacturaContado.
+2. Dos APIs externas (Nager.Date + WorldTimeAPI) combinadas con Merge.
+3. Nodo de correo: requiere configurar credenciales SMTP y destinatario en n8n.
+4. Historial en JSON Server y resumen básico de tendencia.
 
-La URL de feriados está configurada para 2026. Para otro año, edita el año en el nodo `Consultar feriados`. El workflow debe probarse en tu instalación antes de presentarlo.
+## Importar el workflow
+En n8n usa Import from File y selecciona `n8n/workflow_facturacion_extension.json`. Para n8n en el mismo host se usa `127.0.0.1:3000`; en Docker, cambia las URL a una dirección alcanzable desde el contenedor, como `host.docker.internal` en Windows/Mac. Verifica las ejecuciones de los nodos HTTP. El nodo de correo requiere configuración SMTP y las API externas requieren Internet.
 
-
-## Página HTML para probar las clases
-Abre `public/index.html` en el navegador. Permite ingresar una factura, calcular su vencimiento y demostrar un error de datos. Esta página es complementaria; la automatización de n8n sigue ejecutándose por separado.
-
-## Solución al error `ECONNREFUSED ::1:3000`
-Ese mensaje significa que n8n no pudo conectarse a JSON Server; normalmente el servidor no está iniciado o `localhost` se resolvió a IPv6.
-1. En VS Code ejecuta `npm install`.
-2. En una terminal ejecuta `npm run server` y déjala abierta. Debe indicar que escucha en el puerto 3000.
-3. Prueba `http://127.0.0.1:3000/invoices` en el navegador.
-4. En los nodos HTTP del workflow, cambia `http://localhost:3000` por `http://127.0.0.1:3000`.
-5. Si n8n corre dentro de Docker, usa `http://host.docker.internal:3000` en Windows/Mac (o la dirección accesible desde el contenedor).
-6. Vuelve a ejecutar el workflow desde el nodo inicial. Si aparece un error de conexión, no lo interpretes como una factura vencida: revisa el nodo HTTP anterior.
+La consulta de feriados está fijada inicialmente en 2026. Actualiza el año de Nager.Date para otros periodos y contempla años consecutivos si un plazo cruza diciembre.
