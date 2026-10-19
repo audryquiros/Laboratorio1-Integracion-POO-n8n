@@ -1,0 +1,40 @@
+{
+  "invoices": [
+    {
+      "id": "1",
+      "cliente": "Comercial La Ceiba",
+      "fechaEmision": "2026-10-01",
+      "diasPlazo": 15,
+      "estado": "pendiente",
+      "monto": 125000
+    },
+    {
+      "id": "2",
+      "cliente": "Servicios del Valle",
+      "fechaEmision": "2026-10-12",
+      "diasPlazo": 15,
+      "estado": "pendiente",
+      "monto": 89500
+    },
+    {
+      "id": "3",
+      "cliente": "Distribuidora Central",
+      "fechaEmision": "2026-09-01",
+      "diasPlazo": 15,
+      "estado": "vencida",
+      "monto": 215000,
+      "fechaVencimiento": "2026-09-23",
+      "error": null,
+      "ultimaRevision": "2026-10-19"
+    },
+    {
+      "id": "4",
+      "cliente": "Factura ya pagada",
+      "fechaEmision": "2026-09-01",
+      "diasPlazo": 15,
+      "estado": "pagada",
+      "monto": 35000
+    }
+  ],
+  "$schema": "./node_modules/json-server/schema.json"
+}

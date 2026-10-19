@@ -1,0 +1,293 @@
+{
+  "name": "Laboratorio 1 - Facturación con días hábiles",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Iniciar revisión",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/invoices?estado=pendiente",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "get-invoices",
+      "name": "Obtener facturas pendientes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://date.nager.at/api/v3/PublicHolidays/2026/CR",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "get-holidays",
+      "name": "Consultar feriados",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const facturasRaw = $('Obtener facturas pendientes').all().map(x => x.json);\nconst feriadosRaw = $('Consultar feriados').all().map(x => x.json);\nconst feriados = new Set(feriadosRaw.map(x => x.date).filter(Boolean));\nconst hoy = new Date().toISOString().slice(0, 10);\n\nfunction esHabil(iso) {\n  const d = new Date(`${iso}T12:00:00Z`);\n  return d.getUTCDay() !== 0 && d.getUTCDay() !== 6 && !feriados.has(iso);\n}\nfunction sumarDiasHabiles(inicio, cantidad) {\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(inicio)) throw new Error('Fecha de emisión ausente o inválida (YYYY-MM-DD).');\n  if (!Number.isInteger(Number(cantidad)) || Number(cantidad) < 1) throw new Error('diasPlazo debe ser entero positivo.');\n  const d = new Date(`${inicio}T12:00:00Z`);\n  let n = 0, guardia = 0;\n  while (n < Number(cantidad)) {\n    d.setUTCDate(d.getUTCDate() + 1);\n    const iso = d.toISOString().slice(0,10);\n    if (esHabil(iso)) n++;\n    if (++guardia > 800) throw new Error('Límite de cálculo excedido.');\n  }\n  return d.toISOString().slice(0,10);\n}\nconst resultado = [];\nfor (const f of facturasRaw) {\n  try {\n    if (f.id === undefined || !f.cliente || !f.fechaEmision) throw new Error('Faltan id, cliente o fechaEmision.');\n    const vencimiento = sumarDiasHabiles(f.fechaEmision, f.diasPlazo ?? 15);\n    const estado = ['pagada','anulada'].includes(String(f.estado).toLowerCase())\n      ? String(f.estado).toLowerCase()\n      : (hoy > vencimiento ? 'vencida' : 'pendiente');\n    resultado.push({json:{...f, fechaVencimiento:vencimiento, estadoCalculado:estado, fechaProceso:hoy, error:null}});\n  } catch (e) {\n    resultado.push({json:{...f, estadoCalculado:'error', error:e.message, fechaProceso:hoy}});\n  }\n}\nreturn resultado;"
+      },
+      "id": "business-logic",
+      "name": "Calcular vencimientos (POO)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "condition-error",
+              "leftValue": "={{ $json.estadoCalculado }}",
+              "rightValue": "error",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "condition-overdue",
+              "leftValue": "={{ $json.estadoCalculado }}",
+              "rightValue": "vencida",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "if-review",
+      "name": "¿Vencida o con error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        900,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=http://localhost:3000/invoices/{{ $json.id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ estado: $json.estadoCalculado === 'error' ? 'revision_manual' : $json.estadoCalculado, fechaVencimiento: $json.fechaVencimiento || null, error: $json.error || null, ultimaRevision: $json.fechaProceso }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "patch-invoice",
+      "name": "Actualizar factura en JSON Server",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1160,
+        140
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "result",
+              "name": "resultado",
+              "value": "={{ $json.estadoCalculado === 'error' ? 'Factura enviada a revisión manual' : 'Factura vencida actualizada' }}",
+              "type": "string"
+            },
+            {
+              "id": "id",
+              "name": "facturaId",
+              "value": "={{ $json.id }}",
+              "type": "number"
+            },
+            {
+              "id": "due",
+              "name": "fechaVencimiento",
+              "value": "={{ $json.fechaVencimiento || 'No calculada' }}",
+              "type": "string"
+            },
+            {
+              "id": "err",
+              "name": "detalleError",
+              "value": "={{ $json.error || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "result",
+      "name": "Resultado verificable",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1390,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "result",
+              "name": "resultado",
+              "value": "Factura al día; vencimiento calculado",
+              "type": "string"
+            },
+            {
+              "id": "id",
+              "name": "facturaId",
+              "value": "={{ $json.id }}",
+              "type": "number"
+            },
+            {
+              "id": "due",
+              "name": "fechaVencimiento",
+              "value": "={{ $json.fechaVencimiento }}",
+              "type": "string"
+            },
+            {
+              "id": "state",
+              "name": "estado",
+              "value": "={{ $json.estadoCalculado }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "current",
+      "name": "Factura al día",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1160,
+        360
+      ]
+    }
+  ],
+  "connections": {
+    "Iniciar revisión": {
+      "main": [
+        [
+          {
+            "node": "Obtener facturas pendientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener facturas pendientes": {
+      "main": [
+        [
+          {
+            "node": "Consultar feriados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar feriados": {
+      "main": [
+        [
+          {
+            "node": "Calcular vencimientos (POO)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular vencimientos (POO)": {
+      "main": [
+        [
+          {
+            "node": "¿Vencida o con error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Vencida o con error?": {
+      "main": [
+        [
+          {
+            "node": "Actualizar factura en JSON Server",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Factura al día",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar factura en JSON Server": {
+      "main": [
+        [
+          {
+            "node": "Resultado verificable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e10f0000-0000-4000-8000-000000000001",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
