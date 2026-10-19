@@ -3,12 +3,15 @@
     {
       "id": "1",
       "cliente": "Comercial La Ceiba",
-      "fechaEmision": "2026-10-01",
+      "fechaEmision": "2026-08-23",
       "diasPlazo": 15,
-      "estado": "pendiente",
+      "estado": "vencida",
       "monto": 125000,
       "tipo": "credito",
-      "email": ""
+      "email": "audryquirosc@gmail.com",
+      "fechaVencimiento": "2026-09-11",
+      "error": null,
+      "ultimaRevision": "2026-10-19"
     },
     {
       "id": "2",
@@ -18,7 +21,7 @@
       "estado": "pendiente",
       "monto": 89500,
       "tipo": "credito",
-      "email": ""
+      "email": "servicios.valle@example.com"
     },
     {
       "id": "3",
@@ -31,7 +34,7 @@
       "error": null,
       "ultimaRevision": "2026-10-19",
       "tipo": "credito",
-      "email": ""
+      "email": "distribuidora.central@example.com"
     },
     {
       "id": "4",
@@ -41,9 +44,50 @@
       "estado": "pagada",
       "monto": 35000,
       "tipo": "credito",
-      "email": ""
+      "email": "pagos@example.com"
     }
   ],
-  "$schema": "./node_modules/json-server/schema.json",
-  "historial": []
+  "historial": [
+    {
+      "facturaId": "1",
+      "cliente": "Comercial La Ceiba",
+      "fechaVencimiento": "2026-09-11",
+      "estado": "vencida",
+      "fechaRevision": "2026-10-19",
+      "resultado": "Factura vencida actualizada",
+      "detalleError": "",
+      "id": "jzpOavpaN6g"
+    },
+    {
+      "facturaId": "3",
+      "cliente": "Distribuidora Central",
+      "fechaVencimiento": "2026-09-23",
+      "estado": "vencida",
+      "fechaRevision": "2026-10-19",
+      "resultado": "Factura vencida actualizada",
+      "detalleError": "",
+      "id": "PDEc2yVlqyU"
+    },
+    {
+      "facturaId": "1",
+      "cliente": "Comercial La Ceiba",
+      "fechaVencimiento": "2026-09-11",
+      "estado": "vencida",
+      "fechaRevision": "2026-10-19",
+      "resultado": "Factura vencida actualizada",
+      "detalleError": "",
+      "id": "Pk8qIiDcbyQ"
+    },
+    {
+      "facturaId": "3",
+      "cliente": "Distribuidora Central",
+      "fechaVencimiento": "2026-09-23",
+      "estado": "vencida",
+      "fechaRevision": "2026-10-19",
+      "resultado": "Factura vencida actualizada",
+      "detalleError": "",
+      "id": "z7fXPTyrEUw"
+    }
+  ],
+  "$schema": "./node_modules/json-server/schema.json"
 }

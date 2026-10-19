@@ -1,0 +1,644 @@
+{
+  "name": "Laboratorio 1 - Facturación POO + n8n (4 retos integrados)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "027b9b94-4929-4cb0-882c-85f0b3644a94",
+      "name": "Iniciar revisión",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1456,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/invoices",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "1fae75a1-bb85-401a-924a-57f946da236b",
+      "name": "Obtener facturas pendientes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1072,
+        -144
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://date.nager.at/api/v3/PublicHolidays/2026/CR",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "82e1c5fb-eda8-4b40-9a4b-fe4c473e832f",
+      "name": "Consultar feriados",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -864,
+        -144
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const facturasRaw = $('Obtener facturas pendientes').all().map(x => x.json);\nconst datosFecha = $('Unir feriados y fecha actual').first().json;\nconst feriados = new Set(datosFecha.feriados || []);\nconst hoy = datosFecha.fecha;\n\nfunction esHabil(iso) {\n  const d = new Date(`${iso}T12:00:00Z`);\n  return d.getUTCDay() !== 0 && d.getUTCDay() !== 6 && !feriados.has(iso);\n}\nfunction sumarDiasHabiles(inicio, cantidad) {\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(inicio)) throw new Error('Fecha de emisión ausente o inválida (YYYY-MM-DD).');\n  if (!Number.isInteger(Number(cantidad)) || Number(cantidad) < 1) throw new Error('diasPlazo debe ser entero positivo.');\n  const d = new Date(`${inicio}T12:00:00Z`);\n  let n = 0, guardia = 0;\n  while (n < Number(cantidad)) {\n    d.setUTCDate(d.getUTCDate() + 1);\n    const iso = d.toISOString().slice(0,10);\n    if (esHabil(iso)) n++;\n    if (++guardia > 800) throw new Error('Límite de cálculo excedido.');\n  }\n  return d.toISOString().slice(0,10);\n}\nconst resultado = [];\nfor (const f of facturasRaw) {\n  try {\n    if (f.id === undefined || !f.cliente || !f.fechaEmision) throw new Error('Faltan id, cliente o fechaEmision.');\n\nlet vencimiento;\n\nconst tipo = String(f.tipo || 'credito').toLowerCase();\n\nif (tipo === 'contado') {\n  vencimiento = f.fechaEmision;\n} else {\n  vencimiento = sumarDiasHabiles(\n    f.fechaEmision,\n    f.diasPlazo ?? 15\n  );\n}\n    const estado = ['pagada','anulada'].includes(String(f.estado).toLowerCase())\n      ? String(f.estado).toLowerCase()\n      : (hoy > vencimiento ? 'vencida' : 'pendiente');\n    resultado.push({json:{...f, fechaVencimiento:vencimiento, estadoCalculado:estado, fechaProceso:hoy, error:null}});\n  } catch (e) {\n    resultado.push({json:{...f, estadoCalculado:'error', error:e.message, fechaProceso:hoy}});\n  }\n}\nreturn resultado;"
+      },
+      "id": "43fc7c48-ff44-4e1f-8d82-fdd860cc38c4",
+      "name": "Calcular vencimientos (POO)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        -16
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "condition-error",
+              "leftValue": "={{ $json.estadoCalculado }}",
+              "rightValue": "error",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "condition-overdue",
+              "leftValue": "={{ $json.estadoCalculado }}",
+              "rightValue": "vencida",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "8c296313-d68f-4a42-b3a7-5e792f36e0cc",
+      "name": "¿Vencida o con error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=http://localhost:3000/invoices/{{ $json.id }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ estado: $json.estadoCalculado === 'error' ? 'revision_manual' : $json.estadoCalculado, fechaVencimiento: $json.fechaVencimiento || null, error: $json.error || null, ultimaRevision: $json.fechaProceso }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "f4606514-cc39-4e76-ad19-710a261d4ff9",
+      "name": "Actualizar factura en JSON Server",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        416,
+        -144
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "result",
+              "name": "resultado",
+              "value": "={{ $json.estadoCalculado === 'error' ? 'Factura enviada a revisión manual' : 'Factura vencida actualizada' }}",
+              "type": "string"
+            },
+            {
+              "id": "id",
+              "name": "facturaId",
+              "value": "={{ $json.id }}",
+              "type": "number"
+            },
+            {
+              "id": "due",
+              "name": "fechaVencimiento",
+              "value": "={{ $json.fechaVencimiento || 'No calculada' }}",
+              "type": "string"
+            },
+            {
+              "id": "err",
+              "name": "detalleError",
+              "value": "={{ $json.error || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "341e2d06-3ed8-4ee9-9ee1-3e308bfc55f4",
+      "name": "Resultado verificable",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1056,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "result",
+              "name": "resultado",
+              "value": "Factura al día; vencimiento calculado",
+              "type": "string"
+            },
+            {
+              "id": "id",
+              "name": "facturaId",
+              "value": "={{ $json.id }}",
+              "type": "number"
+            },
+            {
+              "id": "due",
+              "name": "fechaVencimiento",
+              "value": "={{ $json.fechaVencimiento }}",
+              "type": "string"
+            },
+            {
+              "id": "state",
+              "name": "estado",
+              "value": "={{ $json.estadoCalculado }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6fe5e463-577f-44fd-9ac4-51620d854ee0",
+      "name": "Factura al día",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://worldtime.timezone.io/api/timezone/America/Costa_Rica",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -1088,
+        128
+      ],
+      "id": "b57ae3ce-5e74-4110-8e95-52ce346d3119",
+      "name": "Consultar fecha/hora Costa Rica"
+    },
+    {
+      "parameters": {
+        "jsCode": "const respuesta = $input.first().json;\n\nreturn [\n  {\n    json: {\n      fecha: respuesta.datetime.slice(0, 10),\n      fechaHora: respuesta.datetime,\n      zonaHoraria: respuesta.timezone\n    }\n  }\n];$input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        128
+      ],
+      "id": "860c4106-bf35-4f71-9ad2-8eeb08a78e15",
+      "name": "Normalizar fecha/hora Costa Rica"
+    },
+    {
+      "parameters": {
+        "jsCode": "const feriados = $input.all()\n  .map(item => item.json.date)\n  .filter(Boolean);\n\nreturn [\n  {\n    json: {\n      feriados\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        -144
+      ],
+      "id": "8daf83c9-a4e7-4f6a-a4b4-944993d2455c",
+      "name": "Normalizar feriados"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -384,
+        -16
+      ],
+      "id": "9d3afacb-8fa6-43fd-b50a-04ddc7de7a80",
+      "name": "Unir feriados y fecha actual"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2b0a411d-db7a-4dab-8fc7-023e83370602",
+              "name": "destinatario",
+              "value": "={{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "81af7945-d3fb-4b0f-b44e-f2e98f169513",
+              "name": "cliente",
+              "value": "={{ $json.cliente }}",
+              "type": "string"
+            },
+            {
+              "id": "fba7e12a-fca3-41a2-bd63-58bc91ec4a65",
+              "name": "fechaVencimiento",
+              "value": "={{ $json.fechaVencimiento }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        640,
+        -144
+      ],
+      "id": "73c689fd-52cf-4504-b2fb-dcb825d9b544",
+      "name": "Preparar aviso por correo"
+    },
+    {
+      "parameters": {
+        "fromEmail": "sweetmariedessertscr@gmail.com",
+        "toEmail": "={{ $json.destinatario }}",
+        "subject": "=Aviso de factura vencida - {{ $json.cliente }}",
+        "html": "=<h2>Aviso de factura vencida</h2>\n\n<p>Estimado/a {{ $json.cliente }}:</p>\n\n<p>Le informamos que su factura presenta un vencimiento pendiente.</p>\n\n<ul>\n  <li><strong>Factura:</strong> {{ $json.id }}</li>\n  <li><strong>Fecha de vencimiento:</strong> {{ $json.fechaVencimiento }}</li>\n  <li><strong>Monto:</strong> ₡{{ $json.monto }}</li>\n</ul>\n\n<p>Le agradecemos revisar el estado de su pago.</p>\n\n<p>Saludos,<br>Departamento de Facturación</p>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        864,
+        -144
+      ],
+      "id": "8d993071-caa7-4d87-84dd-41047281cda0",
+      "name": "Enviar aviso de factura vencida",
+      "webhookId": "ab48a7b2-2a52-459f-bd83-97a41bf9d3cc",
+      "credentials": {
+        "smtp": {
+          "id": "xYcsZwQlivXaHWQp",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/historial",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "facturaId",
+              "value": "={{ $json.facturaId || $('Calcular vencimientos (POO)').item.json.id }}"
+            },
+            {
+              "name": "cliente",
+              "value": "={{ $('Calcular vencimientos (POO)').item.json.cliente }}"
+            },
+            {
+              "name": "fechaVencimiento",
+              "value": "={{ $('Calcular vencimientos (POO)').item.json.fechaVencimiento || 'No calculada' }}"
+            },
+            {
+              "name": "estado",
+              "value": "={{ $('Calcular vencimientos (POO)').item.json.estadoCalculado || 'error' }}"
+            },
+            {
+              "name": "fechaRevision",
+              "value": "={{ $now.setZone('America/Costa_Rica').toISODate() }}"
+            },
+            {
+              "name": "resultado",
+              "value": "={{ $json.resultado || '' }}"
+            },
+            {
+              "name": "detalleError",
+              "value": "={{ $('Calcular vencimientos (POO)').item.json.error || $json.detalleError || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1280,
+        -144
+      ],
+      "id": "8fd3bbeb-4dc5-457d-b381-6e9641540829",
+      "name": "Registrar historial"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/historial",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -1088,
+        352
+      ],
+      "id": "45084074-0da7-48e8-ae82-2d5f872393e8",
+      "name": "Consultar historial"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst historial = $('Consultar historial').all().map(item => item.json);\n\nconst hoy = $now.setZone('America/Costa_Rica').toISODate();\n\n// Conservamos la revisión más reciente de cada factura.\nconst porFactura = new Map();\n\nfor (const item of historial) {\n  const id = String(item.facturaId ?? item.id ?? '');\n  if (!id) continue;\n\n  const anterior = porFactura.get(id);\n\n  if (\n    !anterior ||\n    String(item.fechaRevision ?? '') >\n      String(anterior.fechaRevision ?? '')\n  ) {\n    porFactura.set(id, item);\n  }\n}\n\nconst facturas = [...porFactura.values()];\n\nconst vencidasHoy = facturas.filter(item =>\n  String(item.estado ?? '').toLowerCase() === 'vencida'\n).length;\n\nconst vencidasAnterior = historial.filter(item =>\n  String(item.estado ?? '').toLowerCase() === 'vencida' &&\n  String(item.fechaRevision ?? '') < hoy\n).length;\n\nlet tendencia = 'Sin datos suficientes para comparar';\n\nif (historial.length > 0) {\n  if (vencidasHoy > vencidasAnterior) {\n    tendencia = 'Aumentaron las facturas vencidas';\n  } else if (vencidasHoy < vencidasAnterior) {\n    tendencia = 'Disminuyeron las facturas vencidas';\n  } else {\n    tendencia = 'Las facturas vencidas se mantienen';\n  }\n}\n\nreturn [{\n  json: {\n    fechaAnalisis: hoy,\n    totalRegistros: historial.length,\n    facturasUnicas: facturas.length,\n    vencidasActuales: vencidasHoy,\n    vencidasEnRevisionesAnteriores: vencidasAnterior,\n    tendencia\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -864,
+        352
+      ],
+      "id": "a3ecd2d5-c03c-4286-9a19-89ef85800dd3",
+      "name": "Calcular tendencia de vencimientos"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "bfe1448b-d501-49e1-8277-d418b4c944c4",
+              "name": "fechaAnalisis",
+              "value": "={{ $json.fechaAnalisis }}",
+              "type": "string"
+            },
+            {
+              "id": "0322644f-893d-44f7-bf3a-4d7d5a3209a2",
+              "name": "totalRegistros",
+              "value": "={{ $json.totalRegistros }}",
+              "type": "string"
+            },
+            {
+              "id": "08c471dd-52eb-4227-8554-2e78c18de365",
+              "name": "vencidasHoy",
+              "value": "={{ $json.vencidasActuales }}",
+              "type": "string"
+            },
+            {
+              "id": "5fa0a8b2-5336-49cd-82be-3435da8eefec",
+              "name": "vencidasAnterior",
+              "value": "={{ $json.vencidasEnRevisionesAnteriores }}",
+              "type": "string"
+            },
+            {
+              "id": "0227602d-38cf-4fc5-8537-668c7c5d32b2",
+              "name": "tendencia",
+              "value": "={{ $json.tendencia }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -640,
+        352
+      ],
+      "id": "3f8f2884-07c5-4834-9ae5-74744db80076",
+      "name": "Resultado de tendencia"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Iniciar revisión": {
+      "main": [
+        [
+          {
+            "node": "Consultar fecha/hora Costa Rica",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Obtener facturas pendientes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Consultar historial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener facturas pendientes": {
+      "main": [
+        [
+          {
+            "node": "Consultar feriados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar feriados": {
+      "main": [
+        [
+          {
+            "node": "Normalizar feriados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular vencimientos (POO)": {
+      "main": [
+        [
+          {
+            "node": "¿Vencida o con error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Vencida o con error?": {
+      "main": [
+        [
+          {
+            "node": "Actualizar factura en JSON Server",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Factura al día",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar factura en JSON Server": {
+      "main": [
+        [
+          {
+            "node": "Preparar aviso por correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar fecha/hora Costa Rica": {
+      "main": [
+        [
+          {
+            "node": "Normalizar fecha/hora Costa Rica",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar fecha/hora Costa Rica": {
+      "main": [
+        [
+          {
+            "node": "Unir feriados y fecha actual",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Normalizar feriados": {
+      "main": [
+        [
+          {
+            "node": "Unir feriados y fecha actual",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unir feriados y fecha actual": {
+      "main": [
+        [
+          {
+            "node": "Calcular vencimientos (POO)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar aviso por correo": {
+      "main": [
+        [
+          {
+            "node": "Enviar aviso de factura vencida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar aviso de factura vencida": {
+      "main": [
+        [
+          {
+            "node": "Resultado verificable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado verificable": {
+      "main": [
+        [
+          {
+            "node": "Registrar historial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar historial": {
+      "main": [
+        [
+          {
+            "node": "Calcular tendencia de vencimientos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular tendencia de vencimientos": {
+      "main": [
+        [
+          {
+            "node": "Resultado de tendencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1a26dd1c-d8cc-4625-ae14-6dd2a4f7df82",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4b53981767c9885d007403512e504ec236f2f5af5f2665e52573e1bcfd960c18"
+  },
+  "nodeGroups": [],
+  "id": "6rx1b9nO4ccTE97J",
+  "tags": []
+}
